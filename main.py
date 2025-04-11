@@ -61,15 +61,7 @@ def load_depth_image(depth_path):
             # 计算旋转矩阵
             camera_quaternion = np.array(camera_quaternion).flatten()
             camera_quaternion = camera_quaternion / np.linalg.norm(camera_quaternion)
-            # 若四元数顺序为 (w, x, y, z)
-            qx, qy, qz, qw = camera_quaternion[0], camera_quaternion[1], camera_quaternion[2], camera_quaternion[3]
 
-            # 计算旋转矩阵的各个元素
-            rotation_matrix = np.array([
-                [1 - 2*qy**2 - 2*qz**2, 2*qx*qy - 2*qz*qw, 2*qx*qz + 2*qy*qw],
-                [2*qx*qy + 2*qz*qw, 1 - 2*qx**2 - 2*qz**2, 2*qy*qz - 2*qx*qw],
-                [2*qx*qz - 2*qy*qw, 2*qy*qz + 2*qx*qw, 1 - 2*qx**2 - 2*qy**2]
-            ], dtype=np.float64)
             rot = pyquat.Quaternion(camera_quaternion).rotation_matrix
             # 计算平移矩阵
             translation_matrix = np.array([
@@ -78,10 +70,6 @@ def load_depth_image(depth_path):
                 [0, 0, 1, camera_position[2][0]],
                 [0, 0, 0, 1]
             ], dtype=np.float64)
-            # 计算变换矩阵
-            transform_matrix = np.eye(4, dtype=np.float64)
-            transform_matrix[:3, :3] = rotation_matrix
-            transform_matrix = transform_matrix @ translation_matrix
 
             i += 1
             img_path = os.path.join(depth_path, file)
@@ -96,10 +84,11 @@ def load_depth_image(depth_path):
             v_mesh = (v_mesh_origin/distance.shape[0] + cy) / -fy *2
             angle_to_center_x = np.arctan((u_mesh) * np.tan(field_of_view / 2))
             angle_to_center_y = np.arctan((v_mesh) * np.tan(field_of_view / 2))
-            x = -distance * np.tan(angle_to_center_x)
-            y = -distance * np.tan(angle_to_center_y)
+            x = distance * np.tan(angle_to_center_x)
+            y = distance * np.tan(angle_to_center_y)
             z = distance / np.sqrt(1 + np.tan(angle_to_center_x)**2 + np.tan(angle_to_center_y)**2)
-
+            # print("min z2-z:", np.min(z2-z))
+            # print("max z2-z:", np.max(z2-z))
             camera_positions = np.stack((x, y, z), axis=-1)
             camera_positions = camera_positions.reshape(-1, 3)
             #add camera position into camera positions
