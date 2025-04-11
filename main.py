@@ -37,7 +37,7 @@ def look_at_rotation(position):
     rotation_matrix = np.column_stack((right, up, forward))
     return rotation_matrix
 
-def load_depth_image(depth_path):
+def load_depth_image(depth_path,show_axis=False,visualize=False):
     # 加载元数据
     json_path = os.path.join(depth_path, "metadata.json")
     with open(json_path, 'r') as f:
@@ -91,17 +91,15 @@ def load_depth_image(depth_path):
             # print("max z2-z:", np.max(z2-z))
             camera_positions = np.stack((x, y, z), axis=-1)
             camera_positions = camera_positions.reshape(-1, 3)
-            #add camera position into camera positions
-            print("camera positions shape:", camera_positions.shape)
-            camera_point = np.zeros((1, 3))
-            print("camera point shape:", camera_point.shape)
-            z_direction =  np.array([0,0,1])            #lerp from zero to z_direction
-            axis = []
-            for s in range(100):
-                axis.append(np.array([0,0,0])*(1-s/100)+z_direction*(s/100))
-            axis = np.array(axis)
-            axis = axis.reshape(-1, 3)
-            camera_positions = np.concatenate((camera_positions, axis), axis=0)
+            if show_axis:
+                #add camera position into camera positions
+                z_direction =  np.array([0,0,1])            #lerp from zero to z_direction
+                axis = []
+                for s in range(100):
+                    axis.append(np.array([0,0,0])*(1-s/100)+z_direction*(s/100))
+                axis = np.array(axis)
+                axis = axis.reshape(-1, 3)
+                camera_positions = np.concatenate((camera_positions, axis), axis=0)
             # camera_positions = axis
             project_coordinates = np.stack((u_mesh_origin, v_mesh_origin, distance), axis=-1)
             camera_positions -= camera_position.T
@@ -119,11 +117,11 @@ def load_depth_image(depth_path):
             pcd_world.paint_uniform_color([i/24, 0, 0])
             print(f"Saved point cloud to {path}")
             # pcs.append(pcd)
-            pcs.append(pcd_world)
+            if visualize:
+                pcs.append(pcd_world)
         #visualize
     if len(pcs) > 0:
         o3d.visualization.draw_geometries(pcs, window_name="Point Cloud", width=800, height=600)
-        return
 
 
 
@@ -132,4 +130,4 @@ def load_depth_image(depth_path):
 path = "/home/lzq/workspace/movi-f/outputs/"
 
 for dataset in sorted(os.listdir(path),key=lambda x: int(x)):
-    load_depth_image(os.path.join(path, dataset))
+    load_depth_image(os.path.join(path, dataset),show_axis=False,visualize=True)
