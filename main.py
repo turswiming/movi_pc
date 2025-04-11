@@ -7,7 +7,7 @@ import json
 import cv2
 import open3d as o3d
 import math
-
+import pyquaternion as pyquat
 import numpy as np
 
 def look_at_rotation(position):
@@ -70,7 +70,7 @@ def load_depth_image(depth_path):
                 [2*qx*qy + 2*qz*qw, 1 - 2*qx**2 - 2*qz**2, 2*qy*qz - 2*qx*qw],
                 [2*qx*qz - 2*qy*qw, 2*qy*qz + 2*qx*qw, 1 - 2*qx**2 - 2*qy**2]
             ], dtype=np.float64)
-
+            rot = pyquat.Quaternion(camera_quaternion).rotation_matrix
             # 计算平移矩阵
             translation_matrix = np.array([
                 [1, 0, 0, camera_position[0][0]],
@@ -100,7 +100,7 @@ def load_depth_image(depth_path):
             y = -distance * np.tan(angle_to_center_y)
             z = distance / np.sqrt(1 + np.tan(angle_to_center_x)**2 + np.tan(angle_to_center_y)**2)
 
-            camera_positions = np.stack((z, y, x), axis=-1)
+            camera_positions = np.stack((x, y, z), axis=-1)
             camera_positions = camera_positions.reshape(-1, 3)
             #add camera position into camera positions
             print("camera positions shape:", camera_positions.shape)
@@ -115,15 +115,8 @@ def load_depth_image(depth_path):
             camera_positions = np.concatenate((camera_positions, axis), axis=0)
             # camera_positions = axis
             project_coordinates = np.stack((u_mesh_origin, v_mesh_origin, distance), axis=-1)
-
-            camera_positions_homogeneous = np.concatenate(
-                (camera_positions, np.ones((camera_positions.shape[0], 1))),
-                axis=1
-            )
-            global_positions_homogeneous = (np.linalg.inv(transform_matrix) @ camera_positions_homogeneous.T).T
-            global_positions = global_positions_homogeneous[:, :3] / global_positions_homogeneous[:, 3:4]
-            global_positions = camera_positions @ rotation_matrix.T
             camera_positions -= camera_position.T
+            global_positions = camera_positions @ rot
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(camera_positions)
             #save point cloud
