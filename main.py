@@ -43,7 +43,7 @@ def load_depth_image(depth_path,show_axis=False,visualize=False):
     with open(json_path, 'r') as f:
         metadata = json.load(f)
     K = np.array(metadata["camera"]["K"]).reshape(3, 3)
-    R = np.array(metadata["camera"]["R"]).reshape(4, 4)
+    K *= metadata["flags"]["resolution"]
     field_of_view = metadata["camera"]["field_of_view"] # rad metrics
     focal_length = metadata["camera"]["focal_length"]
     sensor_width = metadata["camera"]["sensor_width"]
@@ -56,6 +56,7 @@ def load_depth_image(depth_path,show_axis=False,visualize=False):
         if file.endswith(".tiff") and file.startswith("depth"):
             camera_position = positions[i]
             camera_quaternion = quaternions[i]
+            i += 1
             camera_position = np.array(camera_position).reshape(3, 1)
             camera_quaternion = np.array(camera_quaternion).reshape(4, 1)
             # 计算旋转矩阵
@@ -63,15 +64,7 @@ def load_depth_image(depth_path,show_axis=False,visualize=False):
             camera_quaternion = camera_quaternion / np.linalg.norm(camera_quaternion)
 
             rot = pyquat.Quaternion(camera_quaternion).rotation_matrix
-            # 计算平移矩阵
-            translation_matrix = np.array([
-                [1, 0, 0, camera_position[0][0]],
-                [0, 1, 0, camera_position[1][0]],
-                [0, 0, 1, camera_position[2][0]],
-                [0, 0, 0, 1]
-            ], dtype=np.float64)
 
-            i += 1
             img_path = os.path.join(depth_path, file)
             distance = cv2.imread(img_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
 
@@ -80,10 +73,10 @@ def load_depth_image(depth_path,show_axis=False,visualize=False):
             v_mesh_origin = v_mesh_origin.astype(np.float32)
             fx, fy = K[0, 0], K[1, 1]  # 焦距
             cx, cy = K[0, 2], K[1, 2]  # 主点偏移
-            u_mesh = (u_mesh_origin/distance.shape[1] + cx) / fx *2
-            v_mesh = (v_mesh_origin/distance.shape[0] + cy) / -fy *2
-            angle_to_center_x = np.arctan((u_mesh) * np.tan(field_of_view / 2))
-            angle_to_center_y = np.arctan((v_mesh) * np.tan(field_of_view / 2))
+            u_mesh = (u_mesh_origin + cx) / fx *2
+            v_mesh = (v_mesh_origin + cy) / -fy *2
+            angle_to_center_x = (u_mesh) * (field_of_view / 2)
+            angle_to_center_y = (v_mesh) * (field_of_view / 2)
             x = distance * np.tan(angle_to_center_x)
             y = distance * np.tan(angle_to_center_y)
             z = distance / np.sqrt(1 + np.tan(angle_to_center_x)**2 + np.tan(angle_to_center_y)**2)
