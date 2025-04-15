@@ -1,2 +1,6 @@
 /__pycache__/
 /.venv/
+/assets/
+
+#downloadable json from google
+/*.json
