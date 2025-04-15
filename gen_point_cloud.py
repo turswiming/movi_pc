@@ -10,8 +10,8 @@ import pyquaternion as pyquat
 from reverse_projection import image_reverse_projection
 
 def load_depth_image(depth_path,show_axis=False,visualize=False):
-    json_path = os.path.join(depth_path, "metadata.json")
-    with open(json_path, 'r') as f:
+    metadata_path = os.path.join(depth_path, "metadata.json")
+    with open(metadata_path, 'r') as f:
         metadata = json.load(f)
     K = np.array(metadata["camera"]["K"]).reshape(3, 3)
     field_of_view = metadata["camera"]["field_of_view"] # rad metrics
