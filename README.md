@@ -36,6 +36,9 @@ unzip the file, read data.json, the boundingbox is in `data["kwargs"]["bounds"]`
 ```
 
 ## read object coord image
+object coord image:  
+![Object Coordinate Image Example](img/object_coordinates_00000.png "Example of an Object Coordinate Image")
+
 the coord contains RGB color c, represent x,y,z, this number is normalized, the true local coord is:  
  ```python
  (c / 255 * boundrange + upbound ) * scale 
