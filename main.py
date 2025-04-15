@@ -47,6 +47,8 @@ def load_depth_image(depth_path,show_axis=False,visualize=False):
             fx, fy = internal_matrix[0, 0], internal_matrix[1, 1]
             cx, cy = internal_matrix[0, 2], internal_matrix[1, 2]
             camera_space_points = image_reverse_projection(distance, fx, fy, cx, cy)
+            camera_space_points = camera_space_points.reshape(-1, 3)
+
             if show_axis:
                 #add camera position into camera positions
                 z_direction =  np.array([0,0,1])            #lerp from zero to z_direction

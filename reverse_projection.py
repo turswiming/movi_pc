@@ -66,5 +66,4 @@ def image_reverse_projection(
     x = z * u_mesh
     y = z * v_mesh
     camera_space_points = np.stack((PROJECTION_FACTOR[0]*x, PROJECTION_FACTOR[1]*y, PROJECTION_FACTOR[2]*z), axis=-1)
-    camera_space_points = camera_space_points.reshape(-1, 3)
     return camera_space_points
