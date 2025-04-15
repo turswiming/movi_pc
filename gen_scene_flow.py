@@ -18,7 +18,7 @@ if "forward_flow" in layers:
 """
 # I don`t know how to express what I feel after check the details of the code
 # Firstly, after check the data distribution, the image store u, v optical flow on y,z channel
-# Not x, y channel.
+# Not x, y channel as movi_f write.
 # So we need to select [...,1:] from png, rather than [..., :2]
 # Later, the magic number 512 don`t have any reason, we can just skip it.
 # Then we get the correct results.
@@ -93,8 +93,6 @@ def visualize_scene_flow(camera_space_points, camera_space_points_next, scene_fl
     Outputs:
     - Visualizes the scene flow using Open3D, showing start points, end points, and flow vectors
     """
-    import open3d as o3d
-    import numpy as np
 
     # Create a point cloud for the starting points
     pcd_start = o3d.geometry.PointCloud()
