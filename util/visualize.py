@@ -52,3 +52,12 @@ def visualize_scene_flow(camera_space_points, camera_space_points_next, scene_fl
     
     # Visualize the scene flow
     o3d.visualization.draw_geometries([pcd_start, line_set,line_set_end,pcd_end], window_name="Scene Flow Visualization")
+
+def vis(pcs:list):
+    pcds = []
+    for i in range(len(pcs)):
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pcs[i])
+        pcds.append(pcd)
+    # visualize the point cloud
+    o3d.visualization.draw_geometries(pcds, window_name="Point Cloud Visualization")
