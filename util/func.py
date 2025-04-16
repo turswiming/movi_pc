@@ -32,3 +32,16 @@ def rgb_array_to_int32(rgb_array):
     return (rgb_array[..., 0].astype(np.uint32) << 16) | \
            (rgb_array[..., 1].astype(np.uint32) << 8) | \
            rgb_array[..., 2].astype(np.uint32)
+
+def camera_space_to_world_space(camera_space_points, camera_position, camera_quaternion):
+    """
+    Convert camera space points to world space points using camera position and quaternion.
+    Args:
+        camera_space_points (numpy.ndarray): 3D points in camera space.
+        camera_position (numpy.ndarray): Camera position in world space.
+        camera_quaternion (numpy.ndarray): Camera orientation as a quaternion.
+    Returns:
+        numpy.ndarray: 3D points in world space.
+    """
+    rot = pyquat.Quaternion(camera_quaternion).rotation_matrix
+    return (rot @ camera_space_points.T).T + camera_position.T

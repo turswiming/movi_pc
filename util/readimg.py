@@ -58,3 +58,15 @@ def read_forward_flow(img_path, data_ranges_path):
     forward_flow = forward_flow / 65535 * (maxv - minv) + minv
 
     return forward_flow
+
+def read_segmentation(img_path):
+    """
+    Reads a segmentation image and processes it to extract the instance IDs.
+    Args:
+        img_path (str): The file path to the segmentation image.
+    Returns:
+        numpy.ndarray: A 2D array representing the segmentation image with instance IDs.
+    """
+    seg_img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+    seg_img = seg_img.astype(np.uint8)
+    return seg_img
