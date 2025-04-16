@@ -41,7 +41,6 @@ def most_likely_instance(segmentations,color,instances)-> int:
 
 def process_one_dataset(dataset_path,show_axis=False,visualize=False):
     metadata_path = os.path.join(dataset_path, "metadata.json")
-    data_range_path = os.path.join(dataset_path, "data_ranges.json")
 
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
@@ -50,31 +49,23 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
     positions = metadata["camera"]["positions"]
     quaternions = metadata["camera"]["quaternions"]
     res = metadata["flags"]["resolution"]
-    series = len(positions)
-    pcs = []
-    i = 0
+    num_frames = len(positions)
     camera_space_points_list = []
     global_space_points_list = []
-    forward_flow_list = []
     camera_position_list = []
-    rotation_list = []
     segmentation_list = []
     seg_color_to_instance_ID_map = {}
-    for file in sorted(os.listdir(dataset_path)):
+    for i, file in enumerate(sorted(os.listdir(dataset_path))):
 
         if file.endswith(".tiff") and file.startswith("depth"):
             camera_position = positions[i]
             camera_quaternion = quaternions[i]
-            i += 1
             camera_position = np.array(camera_position).reshape(3, 1)
             camera_quaternion = np.array(camera_quaternion).reshape(4, 1)
             camera_quaternion = np.array(camera_quaternion).flatten()
 
             dep_img_path = os.path.join(dataset_path, file)
             distance = cv2.imread(dep_img_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
-
-            forward_flow_path = dep_img_path.replace("depth", "forward_flow").replace(".tiff", ".png")
-            forward_flow = read_forward_flow(forward_flow_path, data_range_path)
 
             segmentation_path = dep_img_path.replace("depth", "segmentation").replace(".tiff", ".png")
             segmentation = read_segmentation(segmentation_path)
@@ -87,7 +78,6 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
             global_space_points = camera_space_to_world_space(camera_space_points, camera_position, camera_quaternion)
             camera_position_list.append(camera_position)
             camera_space_points_list.append(camera_space_points)
-            forward_flow_list.append(forward_flow)
             global_space_points_list.append(global_space_points)
             segmentation = rgb_array_to_int32(segmentation)
             segmentation_list.append(segmentation)
@@ -104,38 +94,38 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
     if len(list(set(seg_color_to_instance_ID_map.values()))) != len(unique_colors)-1:
         raise Exception(
             f"segmentation color not match instance, please consider remove the dataset{dataset_path}")
+    num_objects = len(seg_color_to_instance_ID_map)
     
     for frame in range(len(camera_space_points_list)):
-        forward_flow = forward_flow_list[frame]
         camera_space_points = camera_space_points_list[frame]
         segmentation = segmentation_list[frame]
 
         indices_of_instance = np.zeros_like(segmentation, dtype=np.int8)
-        indices_of_instance -= 1
+        indices_of_instance -= 1 #set background to -1 so that in following processing we can ignore it
+        #set the instance id to the segmentation
         for color, instance_id in seg_color_to_instance_ID_map.items():
             indices_of_instance[segmentation == color] = instance_id
-        global_space_center_lists = [np.array(instance["positions"]) for instance in metadata["instances"]]
+        global_space_center_list_list = [instance["positions"] for instance in metadata["instances"]]
         
-        global_space_centers = np.zeros((res,res,3), dtype=np.float32)
-        global_space_centers_list = []
-        for i in range(series):
-            global_space_centers_list.append(np.copy(global_space_centers))
-        for i in range(series):
-            for j, position in enumerate(global_space_center_lists):
-                global_space_centers_list[i][indices_of_instance == j] = global_space_center_lists[j][i]
+        global_space_center_tensor = np.zeros((res,res,3), dtype=np.float32)
+        global_space_center_tensor_list = []
+        for i in range(num_frames):
+            global_space_center_tensor_list.append(np.copy(global_space_center_tensor))
+        for i in range(num_frames):
+            for j in range(num_objects):
+                global_space_center_tensor_list[i][indices_of_instance == j] = global_space_center_list_list[j][i]
         global_space_points = global_space_points_list[frame]
-        global_space_centers = global_space_centers_list[frame]
-        global_space_centers = global_space_centers.reshape(-1, 3)
+        global_space_center_tensor = global_space_center_tensor_list[frame]
+        global_space_center_tensor = global_space_center_tensor.reshape(-1, 3)
 
-        object_rotation_lists = []
+        object_rotation_list_list = []
         for instance in metadata["instances"]:
             object_rotation_list = []
             for j in range(len(instance["quaternions"])):
                 quaternions = np.array(instance["quaternions"][j])
                 rot = pyquat.Quaternion(quaternions).rotation_matrix
                 object_rotation_list.append(rot)
-            object_rotation_lists.append(object_rotation_list)
-        object_rotation_lists = np.array(object_rotation_lists)
+            object_rotation_list_list.append(object_rotation_list)
 
         object_rotation_tensor = np.zeros((res,res,3,3), dtype=np.float32)
         #object rotation tensor is a 4D tensor, the last dimension is 3x3 matrix
@@ -144,29 +134,36 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
         object_rotation_tensor[...,1,1] = 1
         object_rotation_tensor[...,2,2] = 1
         object_rotation_tensor_list = []
-        for i in range(series):
+        for i in range(num_frames):
             object_rotation_tensor_list.append(np.copy(object_rotation_tensor))
-        for i in range(series):
-            for j, rotation in enumerate(object_rotation_lists):
-                object_rotation_tensor_list[i][indices_of_instance == j] = object_rotation_lists[j][i]
+        for i in range(num_frames):
+            for j in range(num_objects):
+                object_rotation_tensor_list[i][indices_of_instance == j] = object_rotation_list_list[j][i]
         object_rotation_tensor = object_rotation_tensor_list[frame]
         object_rotation_tensor = object_rotation_tensor.reshape(-1, 3, 3)
-        object_space_points =  np.einsum('nji,nj->ni', object_rotation_tensor, (global_space_points - global_space_centers))
-        #compute world space points series
-        global_space_trajectories = []
-        for i in range(series):
+        object_space_points =  np.einsum('nji,nj->ni', object_rotation_tensor, (global_space_points - global_space_center_tensor))
+        #compute world space points num_frames
+        global_space_trajectories_list = []
+        for i in range(num_frames):
             object_rotation_tensor = object_rotation_tensor_list[i]
             object_rotation_tensor = object_rotation_tensor.reshape(-1, 3, 3)
             global_space_trajectory = np.einsum('nij,nj->ni', object_rotation_tensor, (object_space_points))
-            global_space_trajectory = global_space_trajectory + global_space_centers_list[i].reshape(-1, 3)
-            global_space_trajectories.append(global_space_trajectory)
-        global_space_trajectories_NP = np.array(global_space_trajectories)
-        global_space_trajectories_NP = global_space_trajectories_NP.astype(np.float16) #to save space
-        np.savez_compressed(os.path.join(dataset_path, f"global_space_trajectories_{frame}.npz"), global_space_trajectories_NP)
-        print(f"file size: {os.path.getsize(os.path.join(dataset_path, f'global_space_trajectories_{frame}.npz')) / 1024 / 1024} MB")
+            global_space_trajectory = global_space_trajectory + global_space_center_tensor_list[i].reshape(-1, 3)
+            global_space_trajectories_list.append(global_space_trajectory)
+            
+        global_space_trajectories_tensor = np.array(global_space_trajectories_list)
+        global_space_trajectories_tensor = global_space_trajectories_tensor.astype(np.float16) #to save space
+        traj_save_path = os.path.join(dataset_path, f"global_space_trajectories_{frame}.npz")
+        try:
+            np.savez_compressed(traj_save_path, global_space_trajectories_tensor)
+        except Exception as e:
+            print(f"Error saving file: {e}")
+        else:
+            print(f"Saved successfully: {traj_save_path}")
+            print(f"file size: {os.path.getsize(traj_save_path) / 1024 / 1024} MB")
         if visualize:
             # visualize_scene_flow(global_space_points, global_space_points_next, scene_flow)
-            visualize_point_trajectory(global_space_trajectories)
+            visualize_point_trajectory(global_space_trajectories_tensor)
 
 
 
