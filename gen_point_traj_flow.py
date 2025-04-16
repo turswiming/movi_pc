@@ -161,14 +161,12 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
             global_space_trajectory = global_space_trajectory + global_space_centers_list[i].reshape(-1, 3)
             global_space_trajectories.append(global_space_trajectory)
         global_space_trajectories_NP = np.array(global_space_trajectories)
+        global_space_trajectories_NP = global_space_trajectories_NP.astype(np.float16) #to save space
         np.savez_compressed(os.path.join(dataset_path, f"global_space_trajectories_{frame}.npz"), global_space_trajectories_NP)
-        global_space_trajectories_NP = global_space_trajectories_NP.astype(np.float16)
         print(f"file size: {os.path.getsize(os.path.join(dataset_path, f'global_space_trajectories_{frame}.npz')) / 1024 / 1024} MB")
         if visualize:
             # visualize_scene_flow(global_space_points, global_space_points_next, scene_flow)
-            noise = np.random.normal(0, 0.01, global_space_points.shape)
             visualize_point_trajectory(global_space_trajectories)
-        #visualiz
 
 
 
