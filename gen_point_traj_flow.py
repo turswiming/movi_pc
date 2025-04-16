@@ -7,7 +7,7 @@ import pyquaternion as pyquat
 from reverse_projection import image_reverse_projection, point_reverse_projection
 from util import clamp, rgb_array_to_int32, camera_space_to_world_space
 from util import read_forward_flow,read_segmentation
-from util import visualize_scene_flow
+from util import visualize_scene_flow, vis,visualize_point_trajectory
 
 
 
@@ -49,7 +49,8 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
     K = np.array(metadata["camera"]["K"]).reshape(3, 3)
     positions = metadata["camera"]["positions"]
     quaternions = metadata["camera"]["quaternions"]
-
+    res = metadata["flags"]["resolution"]
+    series = len(positions)
     pcs = []
     i = 0
     camera_space_points_list = []
@@ -78,14 +79,12 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
             segmentation_path = dep_img_path.replace("depth", "segmentation").replace(".tiff", ".png")
             segmentation = read_segmentation(segmentation_path)
             
-            res = metadata["flags"]["resolution"]
             internal_matrix = K * res
             fx, fy = internal_matrix[0, 0], internal_matrix[1, 1]
             cx, cy = internal_matrix[0, 2], internal_matrix[1, 2]
             camera_space_points = image_reverse_projection(distance, fx, fy, cx, cy)
             camera_space_points = camera_space_points.reshape(-1, 3)
             global_space_points = camera_space_to_world_space(camera_space_points, camera_position, camera_quaternion)
-            
             camera_position_list.append(camera_position)
             camera_space_points_list.append(camera_space_points)
             forward_flow_list.append(forward_flow)
@@ -106,39 +105,70 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
         raise Exception(
             f"segmentation color not match instance, please consider remove the dataset{dataset_path}")
     
-    for i in range(len(camera_space_points_list)):
-        forward_flow = forward_flow_list[i]
-        camera_space_points = camera_space_points_list[i]
-        camera_space_points_next = camera_space_points_list[i+1]
-        rot = rotation_list[i]
-        rot_next = rotation_list[i+1]
-        camera_position = camera_position_list[i]
-        camera_position_next = camera_position_list[i+1]
-        v_mesh, u_mesh = np.meshgrid(np.arange(distance.shape[1]), np.arange(distance.shape[0]))
-        mesh = np.stack((u_mesh, v_mesh), axis=-1)
-        forward_flow = forward_flow.reshape(-1, 2)
-        #replace x and y
-        mesh = mesh.reshape(-1, 2)
-        forward_flow_next = mesh.reshape(-1, 2) + forward_flow[...,[1,0]]
-        camera_space_points = camera_space_points.reshape(-1, 3)
-        camera_space_points_next = camera_space_points_next.reshape(-1, 3)
-        global_space_points = (rot @ camera_space_points.T).T + camera_position.T
-        global_space_points_next = (rot_next @ camera_space_points_next.T).T + camera_position_next.T
-        global_space_points = global_space_points.reshape(res, res, 3)
-        global_space_points_next = global_space_points_next.reshape(res, res, 3)
-        global_space_points_next_place = [global_space_points_next[clamp(int(u),0,res-1),clamp(int(v),0,res-1)] for u,v in forward_flow_next]
-        global_space_points_next_place = np.asarray(global_space_points_next_place)
-        scene_flow = global_space_points_next_place-global_space_points.reshape(-1,3)
-        global_space_points = global_space_points.reshape(-1, 3)
-        global_space_points_next = global_space_points_next.reshape(-1, 3)
-        if visualize:
-            visualize_scene_flow(global_space_points, global_space_points_next, scene_flow)
+    for frame in range(len(camera_space_points_list)):
+        forward_flow = forward_flow_list[frame]
+        camera_space_points = camera_space_points_list[frame]
+        segmentation = segmentation_list[frame]
 
-        #visualize
-    if len(pcs) > 0:
-        axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=[0, 0, 0])
-        pcs.append(axis)
-        o3d.visualization.draw_geometries(pcs, window_name="Point Cloud", width=800, height=600)
+        indices_of_instance = np.zeros_like(segmentation, dtype=np.int8)
+        indices_of_instance -= 1
+        for color, instance_id in seg_color_to_instance_ID_map.items():
+            indices_of_instance[segmentation == color] = instance_id
+        global_space_center_lists = [np.array(instance["positions"]) for instance in metadata["instances"]]
+        
+        global_space_centers = np.zeros((res,res,3), dtype=np.float32)
+        global_space_centers_list = []
+        for i in range(series):
+            global_space_centers_list.append(np.copy(global_space_centers))
+        for i in range(series):
+            for j, position in enumerate(global_space_center_lists):
+                global_space_centers_list[i][indices_of_instance == j] = global_space_center_lists[j][i]
+        global_space_points = global_space_points_list[frame]
+        global_space_centers = global_space_centers_list[frame]
+        global_space_centers = global_space_centers.reshape(-1, 3)
+
+        object_rotation_lists = []
+        for instance in metadata["instances"]:
+            object_rotation_list = []
+            for j in range(len(instance["quaternions"])):
+                quaternions = np.array(instance["quaternions"][j])
+                rot = pyquat.Quaternion(quaternions).rotation_matrix
+                object_rotation_list.append(rot)
+            object_rotation_lists.append(object_rotation_list)
+        object_rotation_lists = np.array(object_rotation_lists)
+
+        object_rotation_tensor = np.zeros((res,res,3,3), dtype=np.float32)
+        #object rotation tensor is a 4D tensor, the last dimension is 3x3 matrix
+        #defult is eye(3)
+        object_rotation_tensor[...,0,0] = 1
+        object_rotation_tensor[...,1,1] = 1
+        object_rotation_tensor[...,2,2] = 1
+        object_rotation_tensor_list = []
+        for i in range(series):
+            object_rotation_tensor_list.append(np.copy(object_rotation_tensor))
+        for i in range(series):
+            for j, rotation in enumerate(object_rotation_lists):
+                object_rotation_tensor_list[i][indices_of_instance == j] = object_rotation_lists[j][i]
+        object_rotation_tensor = object_rotation_tensor_list[frame]
+        object_rotation_tensor = object_rotation_tensor.reshape(-1, 3, 3)
+        object_space_points =  np.einsum('nji,nj->ni', object_rotation_tensor, (global_space_points - global_space_centers))
+        #compute world space points series
+        global_space_trajectories = []
+        for i in range(series):
+            object_rotation_tensor = object_rotation_tensor_list[i]
+            object_rotation_tensor = object_rotation_tensor.reshape(-1, 3, 3)
+            global_space_trajectory = np.einsum('nij,nj->ni', object_rotation_tensor, (object_space_points))
+            global_space_trajectory = global_space_trajectory + global_space_centers_list[i].reshape(-1, 3)
+            global_space_trajectories.append(global_space_trajectory)
+        global_space_trajectories_NP = np.array(global_space_trajectories)
+        np.savez_compressed(os.path.join(dataset_path, f"global_space_trajectories_{frame}.npz"), global_space_trajectories_NP)
+        global_space_trajectories_NP = global_space_trajectories_NP.astype(np.float16)
+        print(f"file size: {os.path.getsize(os.path.join(dataset_path, f'global_space_trajectories_{frame}.npz')) / 1024 / 1024} MB")
+        if visualize:
+            # visualize_scene_flow(global_space_points, global_space_points_next, scene_flow)
+            noise = np.random.normal(0, 0.01, global_space_points.shape)
+            visualize_point_trajectory(global_space_trajectories)
+        #visualiz
 
 
 
@@ -147,4 +177,4 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
 path = "/home/lzq/workspace/movi-f/outputs/"
 
 for dataset in sorted(os.listdir(path),key=lambda x: int(x)):
-    process_one_dataset(os.path.join(path, dataset),show_axis=False,visualize=True)
+    process_one_dataset(os.path.join(path, dataset),show_axis=False,visualize=False)
