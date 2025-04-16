@@ -1,8 +1,12 @@
 import open3d as o3d
 import numpy as np
 
-
 def visualize_scene_flow(camera_space_points, camera_space_points_next, scene_flow):
+    obj = gen_scene_flow_visualize_object(camera_space_points, camera_space_points_next, scene_flow)
+    o3d.visualization.draw_geometries(obj, window_name="Scene Flow Visualization")
+
+
+def gen_scene_flow_visualize_object(camera_space_points, camera_space_points_next, scene_flow):
     """
     Function to visualize the scene flow between two sets of 3D points
     Inputs:
@@ -49,9 +53,27 @@ def visualize_scene_flow(camera_space_points, camera_space_points_next, scene_fl
     line_set_end.lines = o3d.utility.Vector2iVector(lines)
     line_set_end.colors = o3d.utility.Vector3dVector(colors_blue)
     # Create a LineSet for the flow vectors
-    
-    # Visualize the scene flow
-    o3d.visualization.draw_geometries([pcd_start, line_set,line_set_end,pcd_end], window_name="Scene Flow Visualization")
+    return [pcd_start, line_set,line_set_end,pcd_end]
+
+def visualize_point_trajectory(global_space_trajectories):
+    """
+    Function to visualize the point trajectories in 3D space
+    Inputs:
+    - global_space_trajectories: List of 3D points representing the trajectories
+    Outputs:
+    - Visualizes the point trajectories using Open3D
+    """
+    pcds = []
+    for i in range(len(global_space_trajectories)-1):
+        begin = global_space_trajectories[i]
+        end = global_space_trajectories[i+1]
+        scene_flow = end - begin
+        obj = gen_scene_flow_visualize_object(begin, end, scene_flow)
+        pcds += obj
+
+    # visualize the point cloud
+    o3d.visualization.draw_geometries(pcds, window_name="Scene Flow Visualization")
+
 
 def vis(pcs:list):
     pcds = []
@@ -59,5 +81,8 @@ def vis(pcs:list):
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pcs[i])
         pcds.append(pcd)
+    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5)
+    pcds.append(axis)
+
     # visualize the point cloud
     o3d.visualization.draw_geometries(pcds, window_name="Point Cloud Visualization")
