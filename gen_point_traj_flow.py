@@ -8,7 +8,7 @@ from reverse_projection import image_reverse_projection, point_reverse_projectio
 from util import clamp, rgb_array_to_int32, camera_space_to_world_space
 from util import read_forward_flow,read_segmentation
 from util import visualize_scene_flow, vis,visualize_point_trajectory
-
+from time import time
 
 
 
@@ -128,7 +128,28 @@ def save_trajectory(trajectory, dataset_path, frame_idx):
     else:
         print(f"Saved trajectory for frame {frame_idx} to {save_path}")
 
+def read_trajectory(dataset_path, frame_idx):
+    """
+    Read trajectory data from a compressed file.
+    
+    Args:
+        dataset_path (str): Path to dataset directory
+        frame_idx (int): Frame index for reading
+    Returns:
+        np.ndarray: Trajectory data
+    """
+    load_path = os.path.join(dataset_path, f"trajectory_{frame_idx:05d}.npz")
+    try:
+        data = np.load(load_path)
+        trajectory = data['arr_0']
+    except Exception as e:
+        print(f"Error reading trajectory for frame {frame_idx}: {e}")
+        return None
+    else:
+        return trajectory
+
 def process_one_dataset(dataset_path,show_axis=False,visualize=False):
+    time_start = time()
     metadata = get_metadata(dataset_path)
 
     K = np.array(metadata["camera"]["K"]).reshape(3, 3)
@@ -181,10 +202,12 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
     
     object_rotation_list_list = get_obj_rotation_list_list(metadata)
     world_space_center_list_list = get_obj_center_list(metadata)
-    
-    for frame in range(num_frames):
-        segmentation = segmentation_list[frame]
-        world_space_points = world_space_points_list[frame]
+    time_prepare_end = time()
+    print(f"prepare time: {time_prepare_end - time_start:.2f}s")
+    time_generate_start = time()
+    for f in range(num_frames):
+        segmentation = segmentation_list[f]
+        world_space_points = world_space_points_list[f]
 
         indices_of_instance = np.zeros_like(segmentation, dtype=np.int8)
         indices_of_instance -= 1 #set background to -1 so that in following processing we can ignore it
@@ -199,12 +222,12 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
         for frame in range(num_frames):
             for obj_id in range(num_objects):
                 world_space_center_tensor_list[frame][indices_of_instance == obj_id] = world_space_center_list_list[obj_id][frame]
-        world_space_center_tensor = world_space_center_tensor_list[frame]
+        world_space_center_tensor = world_space_center_tensor_list[f]
         world_space_center_tensor = world_space_center_tensor.reshape(-1, 3)
 
 
         object_rotation_tensor_list = get_object_rotation_tensors(res, num_frames, num_objects, indices_of_instance, object_rotation_list_list)
-        object_rotation_tensor = object_rotation_tensor_list[frame]
+        object_rotation_tensor = object_rotation_tensor_list[f]
         object_rotation_tensor = object_rotation_tensor.reshape(-1, 3, 3)
         
         object_space_points =  np.einsum('nji,nj->ni', object_rotation_tensor, (world_space_points - world_space_center_tensor))
@@ -219,9 +242,20 @@ def process_one_dataset(dataset_path,show_axis=False,visualize=False):
             
         world_space_trajectories_tensor = np.array(world_space_trajectories_list)
         world_space_trajectories_tensor = world_space_trajectories_tensor.astype(np.float16) #to save space
-        
-        save_trajectory(world_space_trajectories_tensor, dataset_path, frame)
-        
+        time_generate_end = time()
+        print(f"generate time: {time_generate_end - time_generate_start:.2f}s")
+        time_save_start = time()
+        save_trajectory(world_space_trajectories_tensor, dataset_path, f)
+        time_save_end = time()
+        print(f"save time: {time_save_end - time_save_start:.2f}s")
+        read_time_start = time()
+        # read the trajectory
+        trajectory = read_trajectory(dataset_path, f)
+        if trajectory is None:
+            print(f"Failed to read trajectory for frame {f}")
+        read_time_end = time()
+        print(f"read time: {read_time_end - read_time_start:.2f}s")        
+        time_generate_start = time()
         if visualize:
             # visualize_scene_flow(world_space_points, world_space_points_next, scene_flow)
             visualize_point_trajectory(world_space_trajectories_tensor)
